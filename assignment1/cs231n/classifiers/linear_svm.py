@@ -74,7 +74,6 @@ def svm_loss_vectorized(W, X, y, reg):
   # result in loss.                                                           #
   #############################################################################
   scores = X.dot(W)
-  print X.shape, W.shape, y.shape, scores.shape, num_train
   margins = np.maximum(0, scores \
     - (scores[np.arange(num_train), y])[:, np.newaxis] \
     + delta)
