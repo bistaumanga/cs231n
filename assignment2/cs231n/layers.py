@@ -178,7 +178,11 @@ def batchnorm_forward(x, gamma, beta, bn_param):
     x_hat = x_mu * inv_sd
     out = gamma * x_hat + beta
     running_mean = momentum * running_mean + (1.0 - momentum) * mu
-    running_var = momentum * running_var + (1.0 - momentum) * mu
+    running_var = momentum * running_var + (1.0 - momentum) * var
+    # Store the updated running means back into bn_param
+    bn_param['running_mean'] = running_mean
+    bn_param['running_var'] = running_var
+
     cache = (mu, var, x_mu, x_hat, inv_sd, gamma, beta, bn_param)
     #############################################################################
     #                             END OF YOUR CODE                              #
@@ -190,8 +194,9 @@ def batchnorm_forward(x, gamma, beta, bn_param):
     # and shift the normalized data using gamma and beta. Store the result in   #
     # the out variable.                                                         #
     #############################################################################
-    mu = np.mean(x, axis = 0)
-    var = np.var(x, axis = 0)
+    mu = bn_param['running_mean'] #np.mean(x, axis = 0)
+    var = bn_param['running_var'] #np.var(x, axis = 0)
+    #print bn_param
     out = gamma * (x - mu) * 1./ np.sqrt(var + eps) + beta
     cache = (mu, var, gamma, beta, bn_param)
     #############################################################################
@@ -200,10 +205,7 @@ def batchnorm_forward(x, gamma, beta, bn_param):
   else:
     raise ValueError('Invalid forward batchnorm mode "%s"' % mode)
 
-  # Store the updated running means back into bn_param
-  bn_param['running_mean'] = running_mean
-  bn_param['running_var'] = running_var
-  
+
 
   return out, cache
 
@@ -233,9 +235,12 @@ def batchnorm_backward(dout, cache):
   (N, D) = dout.shape
   (mu, var, x_mu, x_hat, inv_sd, gamma, beta, bn_param) = cache
   dbeta = np.sum(dout, axis = 0)
+  dx_hat = dout * gamma
   dgamma = np.sum(x_hat * dout, axis=0)
-  dx = (1. / N) * gamma * 1./inv_sd * (N * dout - np.sum(dout, axis=0)\
-    - x_mu * inv_sd ** 2 * np.sum(dout * x_mu, axis=0))
+  dx = 1./ N * inv_sd * (\
+    N * dx_hat - np.sum(dx_hat, axis = 0) - x_hat * np.sum(dx_hat * x_hat, axis = 0))
+  # (1. / N) * gamma * 1./inv_sd * (N * dout - np.sum(dout, axis=0)\
+  #   - x_mu * inv_sd ** 2 * np.sum(dout * x_mu, axis=0))
   #############################################################################
   #                             END OF YOUR CODE                              #
   #############################################################################
@@ -265,17 +270,14 @@ def batchnorm_backward_alt(dout, cache):
   # should be able to compute gradients with respect to the inputs in a       #
   # single statement; our implementation fits on a single 80-character line.  #
   #############################################################################
-  (N, D) = dout.shape
-  (mu, var, x_mu, x_hat, inv_sd, gamma, beta, bn_param) = cache
-  dbeta = np.sum(dout, axis = 0)
-  dgamma = np.sum(x_hat * dout, axis=0)
-  dx = (1. / N) * gamma * 1./inv_sd * (N * dout - np.sum(dout, axis=0)\
-    - x_mu * inv_sd ** 2 * np.sum(dout * x_mu, axis=0))
+  
+  # TO DO
+
   #############################################################################
   #                             END OF YOUR CODE                              #
   #############################################################################
   
-  return dx, dgamma, dbeta
+  return batchnorm_backward(dout, cache)
 
 
 def dropout_forward(x, dropout_param):
