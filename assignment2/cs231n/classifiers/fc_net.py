@@ -215,17 +215,17 @@ class FullyConnectedNet(object):
     # of the first batch normalization layer, self.bn_params[1] to the forward
     # pass of the second batch normalization layer, etc.
     
-    # self.bn_params = []
-    # if self.use_batchnorm:
-    #   self.bn_params = [{'mode': 'train', \
-    #                       means: np.zeros(self.dims[i+1]), \
-    #                       vars: np.zeros(self.dims[i+1])\
-    #                       } for i in xrange(self.num_layers - 1)]
-    #   self.params.update({'betas%d'%(i+1) : \
-    #                         np.ones(dims[i + 1]) for i in xrange(self.num_layers)})
-    #   self.params.update({'gamma%d'%(i+1) : \
-    #                         np.zeros(dims[i + 1]) for i in xrange(self.num_layers)})
-    
+    self.bn_params = []
+    if self.use_batchnorm:
+      self.bn_params = {'bn_param%d'%i : {'mode': 'train', \
+                          'running_mean': np.zeros(self.dims[i]), \
+                          'running_var': np.zeros(self.dims[i])\
+                          } for i in xrange(1, self.num_layers)}
+      self.params.update({'beta%d'%i : \
+                            np.ones(self.dims[i]) for i in xrange(1, self.num_layers)})
+      self.params.update({'gamma%d'%i : \
+                            np.zeros(self.dims[i]) for i in xrange(1, self.num_layers)})
+    # print self.bn_params
     # Cast all parameters to the correct datatype
     for k, v in self.params.iteritems():
       self.params[k] = v.astype(dtype)
@@ -245,9 +245,9 @@ class FullyConnectedNet(object):
 
     # if self.dropout_param is not None:
     #   self.dropout_param['mode'] = mode   
-    # if self.use_batchnorm:
-    #   for bn_param in self.bn_params:
-    #     bn_param[mode] = mode
+    if self.use_batchnorm:
+      for bn_param in self.bn_params.keys():
+        self.bn_params[bn_param]['mode'] = mode
 
     scores = None
     cache_hidden_layer = dict()
@@ -264,15 +264,22 @@ class FullyConnectedNet(object):
     # layer, etc.                                                              #
     ############################################################################
     
-    relu_input = X
+    input_x = X
     reg_loss = 0.0
     for l in xrange(1, self.num_layers):
       # extract the params
       Wl, bl = self.params['W%d'%l], self.params['b%d'%l]
+      if(self.use_batchnorm):
+        gamma_l = self.params['gamma%d'%l]
+        beta_l = self.params['beta%d'%l]
+        bn_param_l = self.bn_params['bn_param%d'%l]
+        zl, cache_hidden_layer[l] = affine_norm_relu_forward(\
+          input_x, Wl, bl, gamma_l, beta_l, bn_param_l)
       # hidden layers forward propagation 
-      zl, cache_hidden_layer[l] = affine_relu_forward(relu_input, Wl, bl)
-      # print l, cache_hidden_layer[l][1].shape
-      relu_input = zl
+      else:
+        zl, cache_hidden_layer[l] = affine_relu_forward(input_x, Wl, bl)
+
+      input_x = zl
       reg_loss += self.reg * 0.5 * np.sum(Wl ** 2)
 
     # Output Layer
@@ -314,7 +321,12 @@ class FullyConnectedNet(object):
     dXl_minus_1 = dXL_minus_1
     for l in range(1, self.num_layers)[::-1]:
       # print l, cache_hidden_layer[l][1].shape
-      dx, dWl, dbl = affine_relu_backward(dXl_minus_1, cache_hidden_layer[l])
+      if(self.use_batchnorm):
+        dx, dWl, dbl, dgamma_l, dbeta_l = affine_norm_relu_backward(\
+          dXl_minus_1, cache_hidden_layer[l])
+        grads.update({ 'gamma%d'%l : dgamma_l, 'beta%d'%l : dbeta_l })
+      else:
+        dx, dWl, dbl = affine_relu_backward(dXl_minus_1, cache_hidden_layer[l])
       dXl_minus_1 = dx
       grads.update({ 'W%d'%l : self.reg * self.params['W%d'%l] + dWl })
       grads.update({ 'b%d'%l : dbl })
