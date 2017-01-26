@@ -203,11 +203,11 @@ class FullyConnectedNet(object):
     # dropout layer so that the layer knows the dropout probability and the mode
     # (train / test). You can pass the same dropout_param to each dropout layer.
     
-    # self.dropout_param = {}
-    # if self.use_dropout:
-    #   self.dropout_param = {'mode': 'train', 'p': dropout}
-    #   if seed is not None:
-    #     self.dropout_param['seed'] = seed
+    self.dropout_param = {}
+    if self.use_dropout:
+      self.dropout_param = {'mode': 'train', 'p': dropout}
+      if seed is not None:
+        self.dropout_param['seed'] = seed
     
     # With batch normalization we need to keep track of running means and
     # variances, so we need to pass a special bn_param object to each batch
@@ -243,8 +243,9 @@ class FullyConnectedNet(object):
     # Set train/test mode for batchnorm params and dropout param since they
     # behave differently during training and testing.
 
-    # if self.dropout_param is not None:
-    #   self.dropout_param['mode'] = mode   
+    if self.dropout_param is not None:
+      self.dropout_param['mode'] = mode
+      
     if self.use_batchnorm:
       for bn_param in self.bn_params.keys():
         self.bn_params[bn_param]['mode'] = mode
@@ -266,25 +267,56 @@ class FullyConnectedNet(object):
     
     input_x = X
     reg_loss = 0.0
-    for l in xrange(1, self.num_layers):
+    scores = None
+
+    for l in xrange(1, self.num_layers +1):
       # extract the params
       Wl, bl = self.params['W%d'%l], self.params['b%d'%l]
+      affine_cache, bn_cache, dropout_cache, relu_cache = None, None, None, None
+      
+      # First Affine Transformation
+      affine_out, affine_cache = affine_forward(input_x, Wl, bl)
+      input_x = affine_out
+
+      # Only affine trnsformation for Output layer 
+      if(l == self.num_layers):
+        cache_scores = affine_cache
+        scores = affine_out
+        continue
+
+      # Second batch Normalization
       if(self.use_batchnorm):
         gamma_l = self.params['gamma%d'%l]
         beta_l = self.params['beta%d'%l]
         bn_param_l = self.bn_params['bn_param%d'%l]
-        zl, cache_hidden_layer[l] = affine_norm_relu_forward(\
-          input_x, Wl, bl, gamma_l, beta_l, bn_param_l)
-      # hidden layers forward propagation 
-      else:
-        zl, cache_hidden_layer[l] = affine_relu_forward(input_x, Wl, bl)
+        bn_out, bn_cache = batchnorm_forward(input_x, gamma_l, beta_l, bn_param_l)
+        input_x = bn_out
 
-      input_x = zl
+      # Third, Dropout
+      if(self.use_dropout):
+        dropout_out, dropout_cache = dropout_forward(input_x, self.dropout_param)
+        input_x = dropout_out
+
+      # and finally Relu
+      relu_out, relu_cache = relu_forward(input_x)
+      input_x = relu_out
+
       reg_loss += self.reg * 0.5 * np.sum(Wl ** 2)
+      cache_hidden_layer[l] = (affine_cache, bn_cache, dropout_cache, relu_cache)
+
+
+        # zl, cache_hidden_layer[l] = affine_norm_relu_forward(\
+        #   input_x, Wl, bl, gamma_l, beta_l, bn_param_l)
+      # hidden layers forward propagation
+
+      # else:
+      #   zl, cache_hidden_layer[l] = affine_relu_forward(input_x, Wl, bl)
+
+
 
     # Output Layer
-    WL, bL = self.params['W%d'%self.num_layers], self.params['b%d'%self.num_layers]
-    scores, cache_scores = affine_forward(zl, WL, bL) # output layer
+    # WL, bL = self.params['W%d'%self.num_layers], self.params['b%d'%self.num_layers]
+    # scores, cache_scores = affine_forward(zl, WL, bL) # output layer
 
     ############################################################################
     #                             END OF YOUR CODE                             #
@@ -295,7 +327,7 @@ class FullyConnectedNet(object):
       return scores
 
     data_loss, dscores = softmax_loss(scores, y)
-    reg_loss += self.reg * 0.5 * np.sum(WL ** 2)
+    # reg_loss += self.reg * 0.5 * np.sum(WL ** 2)
     loss, grads = 0.0, {}
     ############################################################################
     # TODO: Implement the backward pass for the fully-connected net. Store the #
@@ -313,21 +345,39 @@ class FullyConnectedNet(object):
     loss = data_loss + reg_loss
     # print loss
     # Lth layer
+    WL = self.params['W%d'%self.num_layers]
     dXL_minus_1, dWL, dbL = affine_backward(dscores, cache_scores)
     grads.update({ 'W%d'%self.num_layers : self.reg * WL + dWL })
     grads.update({ 'b%d'%self.num_layers : dbL })
 
     # for hidden (RELU) layers
-    dXl_minus_1 = dXL_minus_1
+    dout_z = dXL_minus_1
     for l in range(1, self.num_layers)[::-1]:
       # print l, cache_hidden_layer[l][1].shape
+      (affine_cache, bn_cache, dropout_cache, relu_cache) = cache_hidden_layer[l]
+
+      drelu = relu_backward(dout_z, relu_cache)
+      dout_z = drelu
+
+      if(self.use_dropout):
+        ddropout = dropout_backward(dout_z, dropout_cache)
+        dout_z = ddropout
+
       if(self.use_batchnorm):
-        dx, dWl, dbl, dgamma_l, dbeta_l = affine_norm_relu_backward(\
-          dXl_minus_1, cache_hidden_layer[l])
+        dbn, dgamma_l, dbeta_l = batchnorm_backward(dout_z, bn_cache)
         grads.update({ 'gamma%d'%l : dgamma_l, 'beta%d'%l : dbeta_l })
-      else:
-        dx, dWl, dbl = affine_relu_backward(dXl_minus_1, cache_hidden_layer[l])
-      dXl_minus_1 = dx
+        dout_z = dbn
+      
+      dx, dWl, dbl = affine_backward(dout_z, affine_cache)
+
+      # if(self.use_batchnorm):
+      #   dx, dWl, dbl, dgamma_l, dbeta_l = affine_norm_relu_backward(\
+      #     dXl_minus_1, cache_hidden_layer[l])
+      #   grads.update({ 'gamma%d'%l : dgamma_l, 'beta%d'%l : dbeta_l })
+      # else:
+      #   dx, dWl, dbl = affine_relu_backward(dXl_minus_1, cache_hidden_layer[l])
+
+      dout_z = dx
       grads.update({ 'W%d'%l : self.reg * self.params['W%d'%l] + dWl })
       grads.update({ 'b%d'%l : dbl })
 
