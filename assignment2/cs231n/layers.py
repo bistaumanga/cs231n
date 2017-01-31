@@ -1,6 +1,7 @@
 import numpy as np
 
 dims = lambda x: reduce(lambda a, b: a * b, x.shape[1:], 1)
+import itertools
 
 def affine_forward(x, w, b):
   """
@@ -377,12 +378,27 @@ def conv_forward_naive(x, w, b, conv_param):
     W' = 1 + (W + 2 * pad - WW) / stride
   - cache: (x, w, b, conv_param)
   """
-  out = None
+  
+  S = conv_param['stride']
+  P = conv_param['pad']
+
+  x_ = np.pad(x, ((0,), (0,), (P,), (P,)), 'constant')
+  
+  N, C, H, W = x.shape
+  F, C, HH, WW = w.shape
+  H_, W_ =  1 + (H + 2 * P - HH) / S, 1 + (H + 2 * P - WW) / S
+
+  out = np.zeros((N, F, H_, W_))
+
   #############################################################################
   # TODO: Implement the convolutional forward pass.                           #
   # Hint: you can use the function np.pad for padding.                        #
   #############################################################################
-  pass
+  for n in xrange(N):
+    for f in xrange(F):
+      for (i, j) in itertools.product(xrange(H_), xrange(W_)):
+        out[n, f, i, j] = np.sum(\
+          x_[n, :, i * S : i * S + HH, j * S: j * S + WW] * w[f]) + b[f]
   #############################################################################
   #                             END OF YOUR CODE                              #
   #############################################################################
@@ -404,10 +420,24 @@ def conv_backward_naive(dout, cache):
   - db: Gradient with respect to b
   """
   dx, dw, db = None, None, None
+  (x, w, b, conv_param) = cache
+
+  S = conv_param['stride']
+  P = conv_param['pad']
+
+  x_ = np.pad(x, ((0,), (0,), (P,), (P,)), 'constant')
+  
+  N, C, H, W = x.shape
+  F, C, HH, WW = w.shape
+  H_, W_ =  1 + (H + 2 * P - HH) / S, 1 + (H + 2 * P - WW) / S
+
   #############################################################################
   # TODO: Implement the convolutional backward pass.                          #
   #############################################################################
-  pass
+  dw = np.zeros_like(w)
+  dx = np.zeros_like(x)
+  db = np.zeros_like(b)
+  
   #############################################################################
   #                             END OF YOUR CODE                              #
   #############################################################################
